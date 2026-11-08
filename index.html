@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Absensi IoT - RFID & ESP32-CAM</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .foto-absen { width: 95px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc; transition: transform 0.2s; }
+    .foto-absen:hover { transform: scale(1.8); z-index: 10; position: relative; }
+  </style>
+</head>
+<body>
+
+<div class="container py-4">
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <div>
+          <h4 class="mb-0 fw-bold text-primary">Dashboard Absensi RFID & ESP32-CAM</h4>
+          <small class="text-muted">Live Monitoring Cloud Database (Supabase)</small>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <input type="date" id="filter-tanggal" class="form-control form-control-sm" onchange="muatData()">
+          <button class="btn btn-sm btn-outline-secondary" onclick="resetTanggal()">Semua</button>
+          <span class="badge bg-success py-2 px-3">Auto-Refresh 4s</span>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle text-center mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th>No</th>
+              <th>UID RFID</th>
+              <th>Nama</th>
+              <th>Tanggal</th>
+              <th>Jam Masuk</th>
+              <th>Status</th>
+              <th>Foto Capture (ESP32-CAM)</th>
+            </tr>
+          </thead>
+          <tbody id="tabel-absensi">
+            <tr><td colspan="7" class="py-4">Menghubungkan ke Supabase...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // =============== WAJIB UBAH SESUAI URL & ANON KEY SUPABASE KAMU ===============
+  const SUPABASE_URL = 'https://fkyenfaehhczhrpsmusq.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_i4a5hAYQHm4nTPPQCLelYw_PAXf9LJC';
+  // ==============================================================================
+
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  async function muatData() {
+    const tglFilter = document.getElementById('filter-tanggal').value;
+
+    // Mengambil data absensi dan data karyawan
+    let queryAbsen = supabaseClient.from('tb_absensi').select('*').order('id', { ascending: false }).limit(50);
+    if (tglFilter) {
+      queryAbsen = queryAbsen.eq('tanggal', tglFilter);
+    }
+
+    const [{ data: dataAbsen, error }, { data: dataKaryawan }] = await Promise.all([
+      queryAbsen,
+      supabaseClient.from('tb_karyawan').select('uid_rfid, nama')
+    ]);
+
+    const tbody = document.getElementById('tabel-absensi');
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Error: ${error.message}</td></tr>`;
+      return;
+    }
+
+    if (!dataAbsen || dataAbsen.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-muted">Belum ada data absensi. Silakan tempel kartu RFID pada alat.</td></tr>`;
+      return;
+    }
+
+    // Pemetaan UID ke Nama Karyawan
+    const mapNama = {};
+    if (dataKaryawan) {
+      dataKaryawan.forEach(k => { mapNama[k.uid_rfid] = k.nama; });
+    }
+
+    tbody.innerHTML = dataAbsen.map((item, index) => {
+      const namaUser = mapNama[item.uid_rfid] || `User (${item.uid_rfid})`;
+      const jam = item.jam_masuk ? item.jam_masuk.substring(0, 8) : '-';
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td><span class="badge bg-dark font-monospace">${item.uid_rfid}</span></td>
+          <td class="fw-semibold">${namaUser}</td>
+          <td>${item.tanggal}</td>
+          <td>${jam}</td>
+          <td><span class="badge bg-success">${item.status}</span></td>
+          <td>
+            <a href="${item.foto_url}" target="_blank">
+              <img src="${item.foto_url}" class="foto-absen" alt="Capture">
+            </a>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function resetTanggal() {
+    document.getElementById('filter-tanggal').value = '';
+    muatData();
+  }
+
+  muatData();
+  setInterval(muatData, 4000);
+</script>
+
+</body>
+</html>
